@@ -1,7 +1,9 @@
+# from functools import wraps
 from ffpyplayer.player import MediaPlayer
+from ffpyplayer.tools import set_log_callback, loglevels, set_loglevel
 import time
 import asyncio
-from asyncio import sleep, gather
+from asyncio import sleep, gather, Event
 
 
 def player_control(func):
@@ -9,7 +11,7 @@ def player_control(func):
         if self.player is None:
             print(f"[警告] 播放器尚未启动: {func.__name__}")
             return None
-        if (time.time() - self._init_ts) < self._init_wait:
+        if self._loading_finished.is_set():
             print(f"[警告] 播放器尚未准备好（初始化中）: {func.__name__}")
             return None
         return func(self, *args, **kwargs)
@@ -31,14 +33,36 @@ def format_ffmpeg_headers(headers: dict) -> str:
     return "".join(f"{key}: {value}\r\n" for key, value in headers.items())
 
 
+ffmpeg_log_file = open("ffpyplayer.log", "a", encoding="utf8")
+
+
+def current_log_callback(level, message):
+    ffmpeg_log_file.write(f"[{level}] {message}\n")
+    ffmpeg_log_file.flush()
+
+
 class FFPlayerBackend:
-    def __init__(self, loop: asyncio.AbstractEventLoop, http_headers: dict = {}):
+    def __init__(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        http_headers: dict = {},
+        log_callback=None,
+    ):
         self.player: MediaPlayer = None
         self._loop = loop
         self._play_finished: asyncio.Future = loop.create_future()
-        self._init_ts: float = 0.0
-        self._init_wait: float = 0.1
         self._http_headers = http_headers
+        # if log_callback:
+        set_loglevel("warning")
+        set_log_callback(current_log_callback)
+
+        self._loading_time_s = 0.1  # 模拟加载时间
+        self._loading_finished: Event = Event()  # 用于等待加载完成
+
+        self._loading_finished.set()  # 初始时设置为已完成
+        self._loading_manager_task: asyncio.Task | None = None
+
+    # async def wait_until_ready(self):
 
     def _media_callback(self, selector, value):
         if selector == "eof":
@@ -57,33 +81,55 @@ class FFPlayerBackend:
             del self.player
             self.player = None
 
+    async def _manage_loading_state(self):
+        await sleep(self._loading_time_s)  # 模拟加载时间
+        self._loading_finished.set()
+
+    async def waiting_for_loading(self):
+        return await self._loading_finished.wait()
+
     def start_play_audio(self, url: str):
         self._play_finished = self._loop.create_future()
-        self._init_ts = time.time()
+        self._loading_finished.clear()  # 需要等待加载完成
+        if self._loading_manager_task and not self._loading_manager_task.done():
+            self._loading_manager_task.cancel()
+        self._loading_manager_task = asyncio.create_task(self._manage_loading_state())
+
+        ffmpeg_lib_opts: dict = {
+            "reconnect": bytes(1),
+            # "reconnect_at_eof": "1",
+            # "reconnect_streamed": "1",
+            # "reconnect_delay_max": "4000",
+            # "reconnect_max_retries": "5",
+            # "reconnect_delay_total_max": "30",
+            # "respect_retry_after": "1"
+        }
+
+        ffmpeg_ff_opts = {
+            "autoexit": True,
+            "vn": True,
+            "sn": True,
+            "re": True,
+        }
 
         if self._http_headers:
-            self.player = MediaPlayer(
-                url,
-                callback=self._media_callback,
-                lib_opts={"headers": format_ffmpeg_headers(self._http_headers)},
-                ff_opts={"autoexit": True, "vn": True, "sn": True},
+            ffmpeg_lib_opts.update(
+                {
+                    "headers": format_ffmpeg_headers(self._http_headers),
+                }
             )
-        else:
-            self.player = MediaPlayer(
-                url,
-                callback=self._media_callback,
-                ff_opts={"autoexit": True, "vn": True, "sn": True},
-            )
+
+        self.player = MediaPlayer(
+            url,
+            callback=self._media_callback,
+            lib_opts=ffmpeg_lib_opts,
+            ff_opts=ffmpeg_ff_opts,
+        )
 
     @property
     @player_control
     def elapsed_time(self):
         return self.player.get_pts()
-
-    @property
-    @player_control
-    def metadata(self):
-        return self.player.get_metadata()
 
     @player_control
     def pause(self):

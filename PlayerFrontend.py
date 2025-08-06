@@ -12,6 +12,7 @@ from typing import TypedDict, List, Callable, Optional
 import json
 import asyncio
 from sys import argv
+from bilibili_api import video
 
 
 class TrackListItem(ListItem):
@@ -28,21 +29,6 @@ def load_tracks_from_json() -> List[Track]:
     with open(file_path, "r", encoding="utf8") as f:
         tracks = json.load(f)
     return tracks
-    # player.load_playlist(tracks)
-    # player.current_track_index = 0  # 从第一首曲目开始播放
-    # await player.start_play_track()
-
-# class PlayStatusPanel(Static):
-#     def __init__(self):
-#         super().__init__()
-#         self.playing = False
-
-#     def render(self) -> str:
-#         return "Playing" if self.playing else "Paused"
-
-#     def update_status(self, playing: bool):
-#         self.playing = playing
-#         self.refresh()  # 刷新显示
 
 
 class TUIPlayer(App):
@@ -59,11 +45,26 @@ class TUIPlayer(App):
         self.track_list = load_tracks_from_json()
         self.bilibili_api = BilibiliAPI()
         self.player = FFPlayerBackend(
-            asyncio.get_event_loop(), self.bilibili_api.http_headers
+            asyncio.get_event_loop(),
+            self.bilibili_api.http_headers
+            # log_callback=self._log_callback,
         )
 
         self.playing_task: None | asyncio.Task = None
         self.playing = False  # 播放状态
+
+    # def _log_callback(self, level: str, message: str):
+    #     log("ffpyplayer", message)
+    #     if level == "error":
+    #         log.error(message)
+    #     elif level == "warning":
+    #         log.warning(message)
+    #     elif level == "info":
+    #         log.info(message)
+    #     elif level == "debug":
+    #         log.debug(message)
+    #     else:
+    #         log(level, message)
 
     def compose(self) -> ComposeResult:
         self.list_view = ListView(*[TrackListItem(track) for track in self.track_list])
@@ -111,19 +112,27 @@ class TUIPlayer(App):
         await self.player_stop()
         log.info(f"Track ${self.current_track} finished playing.")
 
+
     async def player_start(self):
         track = self.current_track
         if track:
             log.info(f"Starting playback for track: {track['title']}")
             stream = await self.bilibili_api.get_best_audio_stream(track)
             if stream:
-                self.playing_task = asyncio.create_task(self.track_playing_task(stream.url))
+                quality = (
+                    stream.audio_quality
+                    if hasattr(stream, "audio_quality")
+                    else stream.video_quality
+                )
+                log.info(f"Playing stream with quality: {quality}")
+                self.playing_task = asyncio.create_task(
+                    self.track_playing_task(stream.url)
+                )
                 self.playing = True
             else:
                 log.warning("No audio stream found for the selected track.")
         else:
             log.warning("No track selected to play.")
-
 
     async def on_space_key_pressed(self) -> None:
         # 如果正在播放，暂停；如果暂停，继续播放；如果没有播放，开始播放当前选中的曲目
@@ -135,7 +144,7 @@ class TUIPlayer(App):
                 self.player_resume()
             else:
                 await self.player_start()
-    
+
     async def on_enter_key_pressed(self) -> None:
         # 无论是否正在播放，立即暂停开始播放当前选中的曲目
         log.info("Enter key pressed.")
@@ -143,17 +152,17 @@ class TUIPlayer(App):
         await self.player_start()
 
     async def on_key(self, event: events.Key) -> None:
-        # 支持手动上下键选择
-        # if event.key == "up":
-        #     self.list_view.action_cursor_up()
-        # elif event.key == "down":
-        #     self.list_view.action_cursor_down()
         if event.key == "space":
             await self.on_space_key_pressed()
         elif event.key == "q":
             await self.player_stop()
         elif event.key == "enter":
             await self.on_enter_key_pressed()
+        elif event.key == "t":
+            await self.player_stop()
+            log.info("T key pressed, debugging mode enabled.")
+            self.playing_task = asyncio.create_task(self.player.async_play_audio("http://127.0.0.1:8000/file_example_MP3_2MG.mp3"))
+            # debug mode,自动请求
         # ctrl+q 退出
 
 
