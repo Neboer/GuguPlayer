@@ -43,6 +43,8 @@ class FFPlayerBackend:
     def _media_callback(self, selector, value):
         if selector == "eof":
             self._loop.call_soon_threadsafe(self._finish_playback)
+        else:
+            print(f"Media callback: {selector} - {value}")
 
     def _finish_playback(self):
         if not self._play_finished.done():
@@ -97,31 +99,35 @@ class FFPlayerBackend:
             self._play_finished.set_result(None)
         self._close_player()
 
+    @player_control
+    def get_metadata(self):
+        return self.player.get_metadata()
+
     async def async_play_audio(self, url: str):
         self.start_play_audio(url)
         await self._play_finished
 
 
-async def main():
-    url = "http://127.0.0.1:8000/Battle City.mp3"
-    backend = FFPlayerBackend(asyncio.get_event_loop())
-
-    async def stop_2s():
-        await sleep(50)
-        backend.pause()
-
-    async def show_elapsed_time():
-        while True:
-            if backend.elapsed_time is None:
-                print("播放器未初始化或已关闭")
-                await sleep(0.2)
-                continue
-            print(f"已播放时间: {backend.elapsed_time:.2f} 秒")
-            await sleep(0.5)
-
-    await gather(backend.async_play_audio(url), show_elapsed_time(), stop_2s())
-    print("音频播放完毕")
-
-
 if __name__ == "__main__":
+
+    async def main():
+        url = "http://127.0.0.1:8000/Battle City.mp3"
+        backend = FFPlayerBackend(asyncio.get_event_loop())
+
+        async def stop_2s():
+            await sleep(50)
+            backend.pause()
+
+        async def show_elapsed_time():
+            while True:
+                if backend.elapsed_time is None:
+                    print("播放器未初始化或已关闭")
+                    await sleep(0.2)
+                    continue
+                print(f"已播放时间: {backend.elapsed_time:.2f} 秒")
+                await sleep(0.5)
+
+        await gather(backend.async_play_audio(url), show_elapsed_time(), stop_2s())
+        print("音频播放完毕")
+
     asyncio.run(main())

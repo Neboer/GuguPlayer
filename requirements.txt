@@ -2,3 +2,5 @@ ffpyplayer
 bilibili-api-python
 aiohttp
 fake-useragent
+textual
+textual-dev
