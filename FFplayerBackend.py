@@ -11,7 +11,7 @@ def player_control(func):
         if self.player is None:
             print(f"[警告] 播放器尚未启动: {func.__name__}")
             return None
-        if self._loading_finished.is_set():
+        if not self._loading_finished.is_set():
             print(f"[警告] 播放器尚未准备好（初始化中）: {func.__name__}")
             return None
         return func(self, *args, **kwargs)
@@ -65,7 +65,13 @@ class FFPlayerBackend:
     # async def wait_until_ready(self):
 
     def _media_callback(self, selector, value):
-        if selector == "eof":
+        if selector in ["eof"]:
+            self._loop.call_soon_threadsafe(self._finish_playback)
+        elif selector in [ "audio:error", "read:error"]:
+            print(f"ffmpeg error: {selector} - {value}")
+            self._loop.call_soon_threadsafe(self._finish_playback)
+        elif selector in ["audio:exit", "read:exit"]:
+            print(f"ffmpeg exit: {selector} - {value}")
             self._loop.call_soon_threadsafe(self._finish_playback)
         else:
             print(f"Media callback: {selector} - {value}")
@@ -96,7 +102,7 @@ class FFPlayerBackend:
         self._loading_manager_task = asyncio.create_task(self._manage_loading_state())
 
         ffmpeg_lib_opts: dict = {
-            "reconnect": bytes(1),
+            "reconnect": "1",
             # "reconnect_at_eof": "1",
             # "reconnect_streamed": "1",
             # "reconnect_delay_max": "4000",
