@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import TypedDict, Union
 from bilibili_api import video
 from fake_useragent import UserAgent
 
@@ -46,7 +46,7 @@ class BilibiliAPI:
 
     async def get_best_audio_stream(
         self, track: Track
-    ) -> video.VideoStreamDownloadURL | video.AudioStreamDownloadURL:
+    ) -> Union[video.VideoStreamDownloadURL, video.AudioStreamDownloadURL]:
         """
         从一个 Track 对象中提取最优的音频流 URL。
         """

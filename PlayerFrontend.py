@@ -7,7 +7,7 @@ from textual import events
 from textual.reactive import reactive
 from textual import log
 
-from typing import TypedDict, List, Callable, Optional
+from typing import TypedDict, List, Callable, Optional, Union
 
 import json
 import asyncio
@@ -60,9 +60,9 @@ class TUIPlayer(App):
             # log_callback=self._log_callback,
         )
 
-        self.playing_task: None | asyncio.Task = None
+        self.playing_task: Union[None, asyncio.Task] = None
         self.playing = False  # 播放状态
-        self.playing_track_id: int | None = None  # 当前播放的 Track 索引
+        self.playing_track_id: Union[int, None] = None  # 当前播放的 Track 索引
 
     # def _log_callback(self, level: str, message: str):
     #     log("ffpyplayer", message)
@@ -98,7 +98,7 @@ class TUIPlayer(App):
                 return item
         return None
 
-    def _change_playing_track_color(self, color: str|None):
+    def _change_playing_track_color(self, color: Union[str,None]):
         self.current_playing_listitem.set_color(color) if self.current_playing_listitem else None
 
     def player_pause(self):
